@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Reward Harbor \u00b7 Sandbox Advisor",
-  "version": "0.10.0",
+  "version": "0.10.4",
   "description": "Compare card rewards during PayPal sandbox checkout and track estimated reward savings.",
   "minimum_chrome_version": "116",
   "permissions": [

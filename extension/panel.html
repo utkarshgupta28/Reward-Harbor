@@ -1,8 +1,14 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Reward Harbor</title><link rel="stylesheet" href="panel.css"><script src="config.js"></script><script type="module" src="panel.js"></script></head>
 <body>
-  <header><span class="mark">↗</span><div><h1>Reward Harbor</h1><p>Your independent card rewards companion.</p></div><section id="savings" hidden aria-live="polite"></section></header>
-  <div class="banner">SANDBOX · SOURCED REWARDS · ASSUMED CARD TYPES</div>
+  <section id="compact-advisor" hidden aria-label="Card recommendation" aria-live="polite">
+    <div class="compact-heading"><span>REWARD HARBOR <span class="test-badge" title="Test payments with assumed card profiles and simulated purchase categories.">Test mode</span></span><button id="expand-advisor" aria-label="Expand card comparison">Expand <span class="control-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 18L18 6M6 6h12v12"/></svg></span></button></div>
+    <strong id="compact-card">Reading checkout…</strong>
+    <p id="compact-estimate">Checking available funding cards</p>
+  </section>
+  <button id="collapse-advisor" hidden aria-label="Minimize card comparison">Minimize <span class="control-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></span></button>
+  <header><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 18L18 6M6 6h12v12"/></svg></span><div><h1>Reward Harbor</h1></div><section id="savings" hidden aria-live="polite"></section></header>
+  <div class="banner"><span class="test-badge" tabindex="0" title="Test payments with assumed card profiles and simulated purchase categories. Rewards and savings are estimates.">Test mode</span></div>
   <main hidden>
     <section id="purchase-details"><div class="section-title"><h2>Your purchase</h2><button id="refresh">Refresh</button></div>
       <p id="purchase-summary">Reading checkout…</p><p id="card-count" class="muted"></p>
@@ -11,5 +17,5 @@
     <div id="results"></div><p id="status" role="status" aria-live="polite">Reading this page…</p>
 
   </main>
-<dialog id="receipt-dialog" aria-labelledby="receipt-title"><div class="section-title"><h2 id="receipt-title">Payment successful <span class="success-tick" aria-hidden="true">✓</span></h2><button id="close-receipt" aria-label="Close savings confirmation">✕</button></div><div id="receipt-content"></div></dialog>
+<dialog id="receipt-dialog" aria-labelledby="receipt-title"><div class="section-title"><h2 id="receipt-title">Payment successful <span class="success-tick" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg></span></h2><button id="close-receipt" aria-label="Close savings confirmation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div id="receipt-content"></div></dialog>
 </body></html>

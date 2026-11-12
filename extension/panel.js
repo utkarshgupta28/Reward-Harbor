@@ -2,9 +2,25 @@ let API = globalThis.RewardHarborConfig?.defaultApi || 'http://localhost:3000';
 const $ = selector => document.querySelector(selector);
 let snapshot, generation = 0, scanning = false, rescanQueued = false;
 let trackingToken, completedOrderId, lastTotals, lastTransaction;
+let compactMode = new URLSearchParams(location.search).get('compact') === '1';
+const embedded = window !== window.top;
+function setCompact(value) {
+  compactMode = value;
+  document.documentElement.classList.toggle('advisor-compact', value);
+  $('#compact-advisor').hidden = !value;
+  $('#collapse-advisor').hidden = !embedded || value || $('main').hidden;
+}
+setCompact(compactMode);
+$('#expand-advisor').addEventListener('click', () => setCompact(false));
+$('#collapse-advisor').addEventListener('click', () => setCompact(true));
+function compactMessage(title, detail) {
+  $('#compact-card').textContent = title;
+  $('#compact-estimate').textContent = detail;
+}
 const shownReceipts = new Set();
 let watchingOrderId, checkingCompletion = false;
 function completed(receipt) {
+  setCompact(false);
   const id = receipt.transaction.orderId;
   completedOrderId = id;
   renderSavings(receipt.totals, receipt.transaction, true);
@@ -14,11 +30,17 @@ function completed(receipt) {
     shownReceipts.add(id);
     const transaction = receipt.transaction;
     const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
-    $('#receipt-content').replaceChildren(
-      node('p', transaction.estimatedSavingsCents == null ? 'Savings for this payment are unavailable.' : `Estimated savings this payment: ${money(transaction.estimatedSavingsCents)}`),
-      savingsAmount(receipt.totals.estimatedSavingsCents)
-    );
-    if (!$('#receipt-dialog').open) $('#receipt-dialog').showModal();
+    const amounts = node('dl', undefined, 'receipt-amounts');
+    const current = node('div', undefined, 'receipt-current');
+    current.append(node('dt', 'This payment'), node('dd', transaction.estimatedSavingsCents == null ? 'Unavailable' : money(transaction.estimatedSavingsCents)));
+    const total = node('div');
+    total.append(node('dt', 'Total to date'), node('dd', money(receipt.totals.estimatedSavingsCents)));
+    amounts.append(current, total);
+    $('#receipt-content').replaceChildren(node('p', 'Estimated savings', 'receipt-caption'), amounts);
+    if (!$('#receipt-dialog').open) {
+      if (embedded) $('#receipt-dialog').show();
+      else $('#receipt-dialog').showModal();
+    }
   }
 }
 $('#close-receipt').addEventListener('click', () => $('#receipt-dialog').close());
@@ -30,8 +52,11 @@ setInterval(async () => {
     if (result?.receipt) { completed(result.receipt); watchingOrderId = null; }
   } catch { /* The next poll retries a disconnected service worker. */ } finally { checkingCompletion = false; }
 }, 2500);
-function message(text, error = false) { $('#status').textContent = text; $('#status').className = error ? 'error' : ''; }
-function invalidate() { generation++; $('#results').replaceChildren(); }
+function message(text, error = false) {
+  $('#status').textContent = text; $('#status').className = error ? 'error' : '';
+  if (text) compactMessage(error ? 'Recommendation unavailable' : 'Checking your cards', text);
+}
+function invalidate() { generation++; $('#results').replaceChildren(); compactMessage('Reading checkout…', 'Checking available funding cards'); }
 function node(tag, text, className) { const element = document.createElement(tag); if (text !== undefined) element.textContent = text; if (className) element.className = className; return element; }
 function purchase() { return { ...snapshot?.purchase, currency: snapshot?.purchase?.currency || 'USD', category: snapshot?.purchase?.category || 'unknown' }; }
 function summary() {
@@ -39,7 +64,7 @@ function summary() {
   $('#purchase-summary').textContent = `${p.merchantName || 'Merchant unavailable'} · ${p.currency} ${p.amount || '—'} · ${p.category}`;
 }
 function savingsAmount(cents) {
-  const line = node('p', 'Estimated savings: ', 'savings-total');
+  const line = node('p', 'Total estimated savings: ', 'savings-total');
   line.append(node('strong', new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100), 'savings-amount'));
   return line;
 }
@@ -51,14 +76,14 @@ function renderSavings(totals, transaction = totals.lastTransaction, current = f
 }
 function renderCard(card, data, isBest = false) {
   const box = node('article', undefined, `result${isBest ? ' best' : ''}`);
-  box.append(node('span', isBest ? 'BEST ESTIMATED CARD' : 'OTHER CARD', 'tag'), node('h2', card.productName), node('p', `${card.network} ••••${card.last4}`));
+  box.append(node('span', isBest ? 'Recommended card' : 'Other card', 'tag'), node('h2', card.productName), node('p', `${card.network} ••••${card.last4}`, 'card-identity'));
   if (card.estimatedValue != null) {
-    box.append(node('div', `$${card.estimatedValue}`, 'value'));
+    box.append(node('p', 'Estimated rewards', 'reward-label'), node('div', `$${card.estimatedValue}`, 'value'));
     box.append(node('p', card.unit === 'points_per_usd' ? `${card.rewardUnits} points · ${card.rate} points/$ · estimated at 1¢ per point` : `${card.rate}% cashback on this purchase`));
   } else box.append(node('p', card.unavailableReason || 'Reward estimate unavailable.'));
 
+  const benefits = node('details'); benefits.append(node('summary', 'Details & source'));
   if (card.benefits?.length) {
-    const benefits = node('details'); benefits.append(node('summary', 'Card rewards and benefits'));
     const list = node('ul');
     for (const reward of card.benefits) {
       const rate = reward.unit === 'points_per_usd' ? `${reward.rate} points/$` : `${reward.rate}% cashback`;
@@ -72,13 +97,14 @@ function renderCard(card, data, isBest = false) {
       qualifiers.push(...(reward.conditions || []));
       list.append(node('li', `${reward.category === '*' ? 'Other eligible purchases' : reward.category}: ${rate}${qualifiers.length ? ` — ${qualifiers.join('; ')}` : ''}`));
     }
-    benefits.append(node('p', 'General advertised benefits; categories and booking restrictions may not apply to this purchase.', 'muted'), list); box.append(benefits);
+    benefits.append(node('p', 'Advertised benefits; eligibility and booking restrictions apply.', 'muted'), list);
   }
   if (card.sourceUrl) {
     const sourceLine = node('p', 'Source: ', 'source');
     const source = node('a', 'Official issuer reward details'); source.href = card.sourceUrl; source.target = '_blank'; source.rel = 'noopener noreferrer';
-    sourceLine.append(source); box.append(sourceLine);
+    sourceLine.append(source); benefits.append(sourceLine);
   }
+  if (card.benefits?.length || card.sourceUrl) box.append(benefits);
   return box;
 }
 async function showDetectedCards(version) {
@@ -104,6 +130,7 @@ async function recommend() {
   const completed = snapshot?.checkoutState === 'completed' || Boolean(completedOrderId && snapshot?.orderId === completedOrderId);
   const paymentPortal = /^https:\/\/(www\.)?sandbox\.paypal\.com\//i.test(snapshot?.page || '') && (/\/.*checkout/i.test(new URL(snapshot.page).pathname) || Boolean(snapshot.orderId && snapshot.cards?.length));
   const ended = completed || ['cancelled', 'changed', 'failed'].includes(snapshot?.checkoutState) || snapshot?.purchase?.source === 'checkout-ended';
+  if (!paymentPortal || ended) setCompact(false);
   $('main').hidden = !paymentPortal || ended;
   $('#purchase-details').hidden = !paymentPortal || ended;
   if (!paymentPortal || ended) { message(''); return; }
@@ -127,11 +154,19 @@ async function recommend() {
     const alternatives = (data.options || []).filter(card => card.localCardId !== best?.localCardId);
     if (alternatives.length) {
       const dropdown = node('details', undefined, 'alternatives');
-      dropdown.append(node('summary', `${best ? 'Other available cards' : 'Available cards'} (${alternatives.length})`));
+      dropdown.append(node('summary', `Compare cards (${alternatives.length})`));
       for (const card of alternatives) dropdown.append(renderCard(card, data));
       $('#results').append(dropdown);
     }
     message(best ? 'Select this card in PayPal to use its rewards.' : data.reason);
+    if (best) {
+      const baseline = snapshot.baselineSelection;
+      const baselineOption = baseline && data.options.find(card => card.localCardId === baseline.localCardId || (card.network === baseline.network && card.last4 === baseline.last4));
+      const baselineValue = baseline?.kind === 'bank' ? 0 : baselineOption?.estimatedValue != null ? Number(baselineOption.estimatedValue) : null;
+      const difference = baselineValue == null ? null : Math.round((Number(best.estimatedValue) - baselineValue) * 100);
+      const improvement = difference > 0 ? ` · +$${(difference / 100).toFixed(2)} vs initial selection` : '';
+      compactMessage(`${best.productName} ••${best.last4}`, `Est. rewards $${best.estimatedValue}${improvement}`);
+    } else compactMessage('No estimated winner', data.reason);
   } catch (error) { if (version === generation) message(error.message || 'Start the backend with npm run dev and retry.', true); }
 }
 async function scan({ automatic = false } = {}) {
@@ -153,7 +188,7 @@ async function scan({ automatic = false } = {}) {
     if (next.orderId && next.orderId !== completedOrderId) watchingOrderId = next.orderId;
     $('#card-count').textContent = `${next.cards.length} visible card${next.cards.length === 1 ? '' : 's'} · automatic sandbox mappings`;
     summary(); await recommend();
-  } catch (error) { snapshot = null; invalidate(); $('main').hidden = true; message(''); }
+  } catch (error) { snapshot = null; invalidate(); $('main').hidden = true; compactMessage('Couldn’t read checkout', 'Expand and refresh to try again.'); message(''); }
   finally {
     scanning = false;
     if (rescanQueued) { rescanQueued = false; queueMicrotask(() => scan()); }
@@ -184,13 +219,21 @@ if (window !== window.top) document.documentElement.classList.add('floating-pane
 if (window !== window.top) {
   let previousHeight;
   function resizeFloating() {
-    const compact = $('main').hidden && !$('#receipt-dialog').open;
-    const height = compact ? Math.ceil($('header').getBoundingClientRect().height + $('.banner').getBoundingClientRect().height) + 2 : 510;
-    if (height === previousHeight) return;
-    previousHeight = height;
-    window.parent.postMessage({ type: 'REWARD_HARBOR_SIZE', height }, '*');
+    const hideCollapse = compactMode || $('main').hidden;
+    if ($('#collapse-advisor').hidden !== hideCollapse) $('#collapse-advisor').hidden = hideCollapse;
+    const quiet = $('main').hidden && !$('#receipt-dialog').open;
+    const receipt = $('#receipt-dialog').open;
+    const chromeHeight = $('header').getBoundingClientRect().height + $('.banner').getBoundingClientRect().height;
+    const height = compactMode ? Math.ceil($('#compact-advisor').getBoundingClientRect().height) + 2 : receipt ? Math.ceil(chromeHeight + $('#receipt-dialog').getBoundingClientRect().height + 24) + 2 : quiet ? Math.ceil(chromeHeight) + 2 : 510;
+    const mode = compactMode ? 'compact' : receipt ? 'receipt' : quiet ? 'idle' : 'comparison';
+    const state = `${height}:${mode}`;
+    if (state === previousHeight) return;
+    previousHeight = state;
+    window.parent.postMessage({ type: 'REWARD_HARBOR_SIZE', height, compact: compactMode, mode }, '*');
   }
   new ResizeObserver(resizeFloating).observe(document.body);
-  new MutationObserver(resizeFloating).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden', 'open'] });
+  new ResizeObserver(resizeFloating).observe($('#receipt-dialog'));
+  new ResizeObserver(resizeFloating).observe($('header'));
+  new MutationObserver(resizeFloating).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'open'] });
   resizeFloating();
 }

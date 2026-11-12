@@ -6,3 +6,86 @@ header{gap:10px;flex-wrap:wrap}header>div{flex:1;min-width:130px}header #savings
 header .savings-amount,#receipt-content .savings-amount{color:#4ade80}.floating-panel body{min-width:0}.floating-panel header{padding:16px}.floating-panel main{padding:16px}
 /* Compact checkout companion: lead with the card, keep controls secondary. */
 header,.floating-panel header{padding:12px;gap:8px;flex-wrap:nowrap}header>div{min-width:0}h1{font-size:16px;white-space:nowrap}.mark{width:32px;height:32px;flex:0 0 32px;font-size:24px;line-height:32px}header p{font-size:10px;line-height:1.35;margin-top:3px}header #savings{max-width:100px;flex:0 0 100px;padding:6px 8px;font-size:9px}header .savings-amount{font-size:19px;margin-top:0}.banner{font-size:8px;padding:7px 12px;letter-spacing:.55px}main,.floating-panel main{padding:12px}#purchase-details{margin-bottom:8px}.section-title{margin-bottom:4px}#purchase-details h2{font-size:12px}#purchase-summary{font-size:11px;margin:6px 0}#card-count{display:none}#refresh{padding:5px 8px;font-size:10px}.result{padding:13px;border-radius:12px;margin:8px 0}.result h2{font-size:16px;line-height:1.3;margin-top:8px}.result .tag{font-size:9px;padding:3px 6px}.result .value{font-size:30px;margin:4px 0}.result p{font-size:11px;line-height:1.45;margin:7px 0}.result details{padding-top:8px}.source{padding-top:8px}.alternatives{margin:9px 0}.alternatives>summary{padding:10px;font-size:12px}#status{font-size:11px;margin:9px 0;color:#bfc9df}#edit-context{padding-top:9px;font-size:10px}dialog{padding:16px}dialog .section-title h2{font-size:17px}#receipt-content p{font-size:12px}body{scrollbar-width:thin;scrollbar-color:#465174 #101421}
+
+/* A small checkout strip expands only when the shopper asks for details. */
+[hidden]{display:none!important}
+#compact-advisor{margin:0;padding:10px 12px;background:#171d30;border-radius:14px}
+.compact-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+.compact-heading>span{font-size:9px;letter-spacing:.5px;color:#c8c1ff}
+#compact-card{display:block;font-size:13px;line-height:1.35;overflow-wrap:anywhere}
+#compact-estimate{margin:4px 0 0;font-size:11px;line-height:1.4;color:#b7f3db}
+#expand-advisor,#collapse-advisor{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:28px;padding:4px 7px;text-decoration:none;border:1px solid #465174;border-radius:7px;white-space:nowrap}
+#collapse-advisor{margin:8px 12px 0 auto;display:flex;width:max-content}
+.advisor-compact header,.advisor-compact .banner,.advisor-compact main{display:none!important}
+.mark,.success-tick,.control-icon{display:inline-flex;align-items:center;justify-content:center;line-height:1;padding:0;vertical-align:middle}
+.mark svg{width:22px;height:22px}
+.success-tick svg,.control-icon svg{width:18px;height:18px}
+svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+#close-receipt{display:grid;place-items:center;width:32px;height:32px;flex:0 0 32px;padding:0;line-height:1;border-radius:50%}
+#close-receipt svg{width:20px;height:20px}
+dialog .section-title h2{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.success-tick{margin-left:0}
+
+/* Keep the advisor chrome fixed; only the comparison content scrolls. */
+:root{color-scheme:dark;scrollbar-color:#625989 #101421;scrollbar-width:thin}
+*{scrollbar-color:#625989 #101421;scrollbar-width:thin}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track{background:#101421}
+*::-webkit-scrollbar-thumb{background:#625989;border:2px solid #101421;border-radius:8px}
+*::-webkit-scrollbar-thumb:hover{background:#9282ca}
+.floating-panel{height:100%;overflow:hidden}
+.floating-panel body{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.floating-panel header,.floating-panel .banner,.floating-panel #collapse-advisor{flex-shrink:0}
+.floating-panel header{order:0}
+.floating-panel .banner{order:1}
+.floating-panel #collapse-advisor{order:2}
+.floating-panel main{order:3;flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.floating-panel #receipt-dialog{order:4;position:relative;inset:auto;flex:none;width:calc(100% - 24px);max-width:none;max-height:none;margin:12px;padding:14px;box-shadow:none}
+.floating-panel #receipt-dialog[open]{display:block}
+.floating-panel header h1{white-space:normal;line-height:1.25}
+.floating-panel header>div{overflow-wrap:anywhere}
+#receipt-dialog .section-title{position:relative;min-height:32px;margin-bottom:12px}
+#receipt-dialog .section-title h2{margin:0;padding-right:40px;min-height:32px;line-height:1.3;gap:6px}
+#close-receipt{position:absolute;top:0;right:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:32px;height:32px;margin:0;padding:0;border:0;line-height:0}
+#close-receipt svg{display:block;width:18px;height:18px;margin:0;flex:none}
+#receipt-content p{margin:8px 0}
+#receipt-content p:last-child{margin-bottom:0}
+.success-tick svg{display:block}
+.advisor-compact body{height:auto}
+
+/* Refined checkout hierarchy: branding, recommendation, then optional detail. */
+header,.floating-panel header{padding:14px 12px;border-bottom:0;gap:8px}
+header h1{font-size:15px;letter-spacing:-.3px}
+header #savings{flex-basis:100px;max-width:100px;padding:7px 8px;background:#1c2638;border-color:#35445d;font-size:9px;font-weight:500;line-height:1.35}
+header .savings-amount{font-size:20px;margin-top:3px;font-variant-numeric:tabular-nums}
+.banner{padding:0 12px 10px;background:#171d30;letter-spacing:0;border-bottom:1px solid #303954}
+.test-badge{display:inline-flex;align-items:center;padding:3px 7px;border:1px solid #454268;border-radius:5px;background:#25253f;color:#c9c1f8;font-size:9px;font-weight:500;line-height:1.3;letter-spacing:0;vertical-align:middle}
+.compact-heading>span{display:flex;align-items:center;gap:7px;font-size:9px;letter-spacing:.4px}
+.compact-heading .test-badge{padding:2px 5px;font-size:8px}
+#compact-advisor{padding:12px}
+main,.floating-panel main{padding:12px}
+#purchase-details{margin-bottom:12px}
+#purchase-summary{margin:6px 0 0;color:#b7c1d8}
+.result{padding:14px;margin:0 0 12px;border-radius:12px}
+.result .tag{font-size:10px;letter-spacing:.3px;font-weight:600;padding:4px 7px}
+.result h2{font-size:17px;margin:10px 0 4px;line-height:1.35}
+.result .card-identity{color:#a9b4ce;margin:4px 0 14px}
+.result .reward-label{font-size:11px;color:#aeb9d3;margin:0 0 2px}
+.result .value{font-size:32px;line-height:1.15;margin:0 0 8px;font-variant-numeric:tabular-nums}
+.result details{margin-top:12px;padding-top:10px}
+.result details>summary{font-size:11px;color:#c4baff;line-height:1.5}
+.source{margin-bottom:0!important}
+.alternatives{margin:0 0 12px}
+.alternatives>summary{padding:12px;font-size:12px}
+#refresh,#expand-advisor,#collapse-advisor{min-height:30px;padding:5px 9px;border-radius:7px;font-size:11px;line-height:1.2}
+#close-receipt:hover{background:#30334f}
+#receipt-dialog{border-color:#655b9b}
+#receipt-dialog .section-title{margin-bottom:10px}
+#receipt-content .receipt-caption{margin:0 0 10px;color:#aeb9d3;font-size:11px}
+.receipt-amounts{margin:0}
+.receipt-amounts>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid #35405d}
+.receipt-amounts>div:last-child{padding-bottom:0}
+.receipt-amounts dt{font-size:12px;color:#c1c9dd}
+.receipt-amounts dd{margin:0;font-size:20px;font-weight:650;color:#4ade80;font-variant-numeric:tabular-nums}
+.receipt-amounts .receipt-current{border-top:0;padding-top:0}
+.receipt-amounts .receipt-current dd{font-size:30px;line-height:1.2}

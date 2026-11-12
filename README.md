@@ -8,7 +8,7 @@ No live PayPal endpoints are used.
 
 ## Start the checkout
 
-Requires Node.js 22+.
+Requires Node.js 22.14+ within the 22.x line, or 24.14.1+ within the 24.x line.
 
 ```sh
 npm install
@@ -170,7 +170,7 @@ It does not store PayPal passwords or full card numbers.
 The extension creates a private random history token in local extension storage;
 the database stores its hash. History is scoped to this browser installation,
 not an authenticated PayPal user or cross-device account. Removing extension data
-loses access to that installation's history. SQLite uses Node 22's built-in
+loses access to that installation's history. SQLite uses Node's built-in
 experimental `node:sqlite` module. The database is ignored by Git.
 
 Savings mean **selected-card estimated rewards minus the first observed funding
@@ -272,7 +272,7 @@ SQLite does not need a separate database service or manual schema creation: the 
 - Alternatively mount a disk at `/var/data` and set `DATA_DIR=/var/data`.
 - Both `checkout.json` and `rewards.sqlite`, including SQLite sidecars, must stay inside that disk. Keep a single application instance.
 - Build: `npm ci`. Start: `npm start`. Health check: `/api/health`.
-- The package pins Node 22.14+ within the 22.x line for its native `node:sqlite` API. Remove conflicting Render `NODE_VERSION` overrides or set a compatible 22.x version.
+- The package supports Node 22.14+ within the 22.x line and Node 24.14.1+ within the 24.x line for its native `node:sqlite` API. Set Render's `NODE_VERSION` to `24.14.1` or another version within the supported ranges.
 - Set the existing PayPal sandbox, Channel3 and Elastic environment variables in Render, plus `PUBLIC_ORIGIN=https://reward-harbor.onrender.com`.
 - Local savings are not transferred automatically. Adding a new empty disk or changing `DATA_DIR` starts with empty history unless existing data is migrated safely.
 

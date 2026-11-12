@@ -57,11 +57,15 @@ test('unknown paid card or baseline does not fabricate savings', async t => {
   assert.equal(result.totals.unquantifiedPayments, 1);
 });
 test('history survives database reopening and is isolated by installation token', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'reward-history-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp(join(tmpdir(), 'reward-history-'));
   const file = join(directory, 'history.sqlite'); const store = { data: { orders: {} } };
   let service = createSavings({ store, file });
+  t.after(async () => {
+    service.close();
+    await rm(directory, { recursive: true, force: true });
+  });
   quoted(service, store, 'ORDERABC'); completed(store, 'ORDERABC'); await finalize(service, 'ORDERABC'); service.close();
-  service = createSavings({ store, file }); t.after(service.close);
+  service = createSavings({ store, file });
   assert.equal((await call(service, '/api/savings/summary')).estimatedSavingsCents, 192);
   const other = await call(service, '/api/savings/summary', null, { headers: { authorization: `Bearer ${'b'.repeat(64)}` } });
   assert.equal(other.completedPayments, 0);

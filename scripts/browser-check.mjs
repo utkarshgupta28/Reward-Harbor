@@ -144,6 +144,7 @@ try {
         tabId: 9, page: 'https://sandbox.paypal.com/checkoutnow', note: 'Fixture cards; visible labels only.',
         cards: [{ localCardId: 'Visa:6302', network: 'Visa', last4: '6302' }, { localCardId: 'Amex:2402', network: 'Amex', last4: '2402' }],
         purchase: { merchantName: 'Harbor Market', amount: '120.00', currency: 'USD', category: 'grocery' },
+        baselineSelection: { kind: 'bank', localCardId: 'bank:6206' },
       }) }; } },
     };
   });
@@ -155,7 +156,9 @@ try {
   await panel.locator('.alternatives > summary').click();
   assert.match(await panel.locator('.result:not(.best)').innerText(), /Chase Freedom Unlimited/);
   assert.equal(await panel.getByText('Assumptions and source', { exact: true }).count(), 0);
-  assert.equal(await panel.locator('.result.best a').innerText(), 'Official issuer reward details');
+  assert.equal(await panel.locator('.result.best details').getAttribute('open'), null);
+  assert.equal(await panel.locator('.result.best details > summary').innerText(), 'Details & source');
+  assert.equal(await panel.locator('.result.best a').textContent(), 'Official issuer reward details');
   assert.match(await panel.locator('.result:not(.best) .value').innerText(), /\$1\.80/);
   await panel.locator('.result:not(.best) details').first().locator('summary').click();
   assert.match(await panel.locator('.result:not(.best)').innerText(), /dining: 3% cashback/);
@@ -163,6 +166,53 @@ try {
   assert.match(await panel.locator('.result.best').innerText(), /\$4\.80/);
   assert.equal(await panel.locator('input,select').count(), 0, 'No manual purchase editing forms');
   await panel.screenshot({ path: 'artifacts/extension-panel.png', fullPage: true });
+  // Exercise the actual embedded panel at the floating window's narrow width.
+  await panel.evaluate(base => {
+    const frame = document.createElement('iframe'); frame.id = 'compact-fixture';
+    frame.src = `${base}/__panel?compact=1`;
+    frame.style.cssText = 'position:fixed;inset:0;width:340px;height:150px;border:0;z-index:9999';
+    window.addEventListener('message', event => {
+      if (event.source !== frame.contentWindow || event.data?.type !== 'REWARD_HARBOR_SIZE') return;
+      window.embeddedSize = event.data;
+      frame.style.height = `${event.data.height}px`;
+    });
+    document.body.append(frame);
+  }, base);
+  const compact = panel.frameLocator('#compact-fixture');
+  await compact.locator('#compact-card').filter({ hasText: 'American Express Gold Card' }).waitFor();
+  assert.match(await compact.locator('#compact-estimate').innerText(), /Est\. rewards \$4\.80.*\+\$4\.80 vs initial selection/);
+  assert.equal(await compact.locator('main').isVisible(), false);
+  const compactHeight = await compact.locator('#compact-advisor').evaluate(el => el.getBoundingClientRect().height);
+  assert.ok(compactHeight <= 140, `Compact recommendation is ${compactHeight}px tall`);
+  await panel.locator('#compact-fixture').screenshot({ path: 'artifacts/compact-advisor.png' });
+  await compact.getByRole('button', { name: 'Expand card comparison' }).click();
+  assert.equal(await compact.locator('.result.best').isVisible(), true);
+  await panel.locator('#compact-fixture').evaluate(el => { el.style.height = '510px'; });
+  const headerTop = await compact.locator('header').evaluate(el => el.getBoundingClientRect().top);
+  await compact.locator('main').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  assert.equal(await compact.locator('header').evaluate(el => el.getBoundingClientRect().top), headerTop, 'Header stays fixed while comparison scrolls');
+  await compact.getByRole('button', { name: 'Minimize card comparison' }).click();
+  assert.equal(await compact.locator('#compact-advisor').isVisible(), true);
+  assert.equal(await compact.locator('main').isVisible(), false);
+  await compact.locator('body').evaluate(() => {
+    for (const listener of window.extensionListeners) listener({ type: 'SAVINGS_UPDATED', receipt: {
+      transaction: { orderId: 'COMPACT123', estimatedSavingsCents: 120 }, totals: { estimatedSavingsCents: 312 },
+    } });
+  });
+  await panel.waitForFunction(() => window.embeddedSize?.mode === 'receipt');
+  const receiptBounds = await compact.locator('#receipt-dialog').boundingBox();
+  const embeddedBounds = await panel.locator('#compact-fixture').boundingBox();
+  assert.ok(embeddedBounds.height < 360, 'Receipt shrinks the floating panel to its content');
+  assert.ok(embeddedBounds.height - receiptBounds.y - receiptBounds.height < 18, 'No dead space below the receipt');
+  const closeBounds = await compact.locator('#close-receipt').boundingBox();
+  const closeIcon = await compact.locator('#close-receipt svg').boundingBox();
+  assert.ok(Math.abs(closeBounds.x + closeBounds.width / 2 - closeIcon.x - closeIcon.width / 2) < 1);
+  assert.ok(Math.abs(closeBounds.y + closeBounds.height / 2 - closeIcon.y - closeIcon.height / 2) < 1);
+  await panel.locator('#compact-fixture').screenshot({ path: 'artifacts/embedded-receipt.png' });
+  await compact.getByRole('button', { name: 'Close savings confirmation' }).click();
+  await panel.waitForFunction(() => window.embeddedSize?.mode === 'idle');
+  assert.ok((await panel.locator('#compact-fixture').boundingBox()).height < 160, 'Dismissing receipt restores a small idle panel');
+  await panel.locator('#compact-fixture').evaluate(el => el.remove());
   await panel.evaluate(() => {
     window.panelSnapshot = { tabId: 9, page: 'https://sandbox.paypal.com/checkoutnow', cards: [{ localCardId: 'Visa:6302', network: 'Visa', last4: '6302' }, { localCardId: 'Amex:2402', network: 'Amex', last4: '2402' }], purchase: { merchantName: 'Harbor Market', amount: '100.00', currency: 'USD', category: 'grocery' } };
     for (const listener of window.extensionListeners) listener({ type: 'PAGE_CHANGED' });
@@ -186,14 +236,14 @@ try {
       totals: { estimatedSavingsCents: 312, completedPayments: 2 },
     } });
   });
-  assert.equal((await panel.locator('header #savings').innerText()).replace(/\s+/g, ' '), 'Estimated savings: $3.12');
-  assert.match(await panel.locator('#savings').innerText(), /Estimated savings:\s+\$3\.12/);
+  assert.equal((await panel.locator('header #savings').innerText()).replace(/\s+/g, ' '), 'Total estimated savings: $3.12');
+  assert.match(await panel.locator('#savings').innerText(), /Total estimated savings:\s+\$3\.12/);
   assert.equal(await panel.locator('#purchase-details').isHidden(), true);
   assert.equal(await panel.locator('.result').count(), 0);
   assert.equal(await panel.locator('main').isHidden(), true);
   assert.equal(await panel.locator('#status').textContent(), '');
   assert.equal(await panel.locator('#receipt-dialog').isVisible(), true);
-  assert.match(await panel.locator('#receipt-content').innerText(), /Estimated savings this payment: \$1\.20/);
+  assert.match(await panel.locator('#receipt-content').innerText(), /This payment\s*\$1\.20/);
   await panel.screenshot({ path: 'artifacts/savings-summary.png', fullPage: true });
   await panel.locator('#close-receipt').click();
   assert.equal(await panel.locator('#receipt-dialog').isVisible(), false);
@@ -223,10 +273,37 @@ try {
   await floating.evaluate(() => history.replaceState({}, '', '/pay/checkout?token=ORDER123'));
   await floating.locator('iframe[title="Reward Harbor card rewards advisor"]').waitFor({ state: 'visible' });
   assert.equal(await floating.locator('iframe').count(), 1, 'Login-to-checkout mounts exactly one advisor');
+  await floating.evaluate(() => {
+    const frame = document.querySelector('div').shadowRoot.querySelector('iframe');
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, origin: 'about:blank', data: { type: 'REWARD_HARBOR_SIZE', height: 400, mode: 'comparison' } }));
+  });
+  const shell = floating.locator('.shell');
+  const beforeResize = await shell.boundingBox();
+  await floating.getByRole('button', { name: 'Resize advisor' }).press('ArrowLeft');
+  await floating.getByRole('button', { name: 'Resize advisor' }).press('ArrowUp');
+  const afterResize = await shell.boundingBox();
+  assert.ok(afterResize.width > beforeResize.width && afterResize.height > beforeResize.height, 'Resize control changes both dimensions');
+  const gripBounds = await floating.getByRole('button', { name: 'Resize advisor' }).boundingBox();
+  await floating.mouse.move(gripBounds.x + gripBounds.width / 2, gripBounds.y + gripBounds.height / 2);
+  await floating.mouse.down();
+  await floating.mouse.move(gripBounds.x - 25, gripBounds.y - 25, { steps: 4 });
+  await floating.mouse.up();
+  assert.ok((await shell.boundingBox()).width > afterResize.width, 'Pointer dragging resizes the advisor');
+  const launcher = await floating.getByRole('button', { name: 'Close Reward Harbor' }).boundingBox();
+  const launcherIcon = await floating.getByRole('button', { name: 'Close Reward Harbor' }).locator('svg').boundingBox();
+  assert.ok(Math.abs(launcher.x + launcher.width / 2 - launcherIcon.x - launcherIcon.width / 2) < 1);
+  assert.ok(Math.abs(launcher.y + launcher.height / 2 - launcherIcon.y - launcherIcon.height / 2) < 1);
+  await floating.getByRole('button', { name: 'Close Reward Harbor' }).screenshot({ path: 'artifacts/launcher-close.png' });
   await floating.getByRole('button', { name: 'Close Reward Harbor' }).click();
   assert.equal(await floating.locator('iframe').isVisible(), false);
   await floating.waitForTimeout(900);
   assert.equal(await floating.locator('iframe').isVisible(), false, 'Route polling respects dismissal');
+  const openLauncher = floating.getByRole('button', { name: 'Open Reward Harbor' });
+  const arrowBounds = await openLauncher.locator('svg').boundingBox();
+  const openBounds = await openLauncher.boundingBox();
+  assert.ok(Math.abs(openBounds.x + openBounds.width / 2 - arrowBounds.x - arrowBounds.width / 2) < 1);
+  assert.ok(Math.abs(openBounds.y + openBounds.height / 2 - arrowBounds.y - arrowBounds.height / 2) < 1);
+  await openLauncher.screenshot({ path: 'artifacts/launcher-open.png' });
   await floating.getByRole('button', { name: 'Open Reward Harbor' }).click();
   assert.equal(await floating.locator('iframe').isVisible(), true);
   await floating.close();
