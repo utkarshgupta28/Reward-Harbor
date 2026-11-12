@@ -1,7 +1,8 @@
 const $ = selector => document.querySelector(selector);
 const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 let config, department = 'all', catalogGeneration = 0, quoteGeneration = 0;
-let selected, selectedQuote, busy = false, paid = false, pendingOrder, activeOrderId, sdkPromise;
+let selected, selectedQuote, busy = false, paid = false, pendingOrder, activeOrderId, sdkPromise, corePromise;
+let sdkGeneration = 0;
 function node(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
 async function request(path, body) {
   const response = await fetch(path, { ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(40000) });
@@ -67,7 +68,9 @@ async function openProduct(product) {
   selected = { id: product.id, department: product.department }; selectedQuote = null; paid = false; pendingOrder = null;
   $('#quantity').value = '1'; $('#checkout-heading').textContent = product.title; $('#detail-department').textContent = product.departmentName;
   image($('#detail-image'), $('#detail-fallback'), product.imageUrl, product.title);
-  $('#description').textContent = product.selectedOptions?.map(o => `${o.name}: ${o.label}`).join(' · ') || 'A live catalog find, ready for a sandbox checkout.';
+  $('#description').textContent = product.selectedOptions?.map(o => `${o.name}: ${o.label}`).join(' · ') || 'Compare offers, choose a quantity, and continue with PayPal.';
+  $('#merchant').textContent = 'Harbor Market'; $('#checkout-category').textContent = '\u2014';
+  $('#retry-paypal').hidden = true;
   $('#offer').replaceChildren(); $('#total').textContent = '—'; $('#retry-capture').hidden = true; $('#continue-shopping').hidden = true;
   if (!$('#product-dialog').open) $('#product-dialog').showModal();
   await requote();
@@ -75,7 +78,11 @@ async function openProduct(product) {
 async function requote() {
   const quantity = Number($('#quantity').value);
   if (!selected || !Number.isInteger(quantity) || quantity < 1 || quantity > 10) { status('Choose a quantity from 1 to 10.', 'error'); $('#paypal-button-container').hidden = true; return; }
-  const generation = ++quoteGeneration; lock(true); $('#paypal-button-container').hidden = true; status('Checking the current offer…');
+  const generation = ++quoteGeneration; lock(true);
+  $('#retry-paypal').hidden = true; $('#payment-loading').hidden = !config.configured;
+  $('#payment-loading-label').textContent = 'Preparing PayPal\u2026';
+  const paymentReady = config.configured ? setupPayPal().then(() => null, error => error) : null;
+  $('#paypal-button-container').hidden = true; status('Checking the current offer…');
   try {
     const quote = await request('/api/storefront/quote', { productId: selected.id, department: selected.department,
       quantity, offerDomain: $('#offer').value || undefined });
@@ -89,30 +96,51 @@ async function requote() {
     $('#total').textContent = money(Number(quote.purchase.amount));
     publishPurchase(quote.purchase);
     $('#setup').hidden = config.configured;
-    if (config.configured) { await setupPayPal(); $('#paypal-button-container').hidden = false; status('Ready. Pay securely with your sandbox buyer account.'); }
+    if (config.configured) {
+      lock(false);
+      status('Preparing PayPal\u2026');
+      const paymentError = await paymentReady;
+      if (generation !== quoteGeneration) return;
+      if (paymentError) throw paymentError;
+      $('#paypal-button-container').hidden = false; status('Continue with PayPal to choose your payment method.');
+    }
     else status('Sandbox payment credentials are not configured.');
-  } catch (error) { selectedQuote = null; status(error.message, 'error'); }
-  finally { if (generation === quoteGeneration) lock(false); }
+  } catch (error) { if (generation === quoteGeneration) { $('#retry-paypal').hidden = !config.configured; selectedQuote = null; status(error.message, 'error'); } }
+  finally { if (generation === quoteGeneration) { $('#payment-loading').hidden = true; lock(false); } }
 }
 async function capture(orderId) {
-  pendingOrder = orderId; status('Confirming your sandbox payment…');
+  pendingOrder = orderId; status('Confirming your payment…');
   try {
     const result = await request(`/api/paypal/orders/${encodeURIComponent(orderId)}/capture`, {});
     paid = true; lock(false); pendingOrder = null; publishPayment('completed', orderId);
     $('#retry-capture').hidden = true; $('#paypal-button-container').hidden = true; $('#continue-shopping').hidden = false;
     $('#payment-success-info').textContent = `${result.currency} ${result.amount}`;
     $('#payment-success').showModal();
-    status(`Sandbox payment completed · ${result.currency} ${result.amount}`, 'success');
+    status(`Payment completed · ${result.currency} ${result.amount}`, 'success');
   } catch (error) {
     lock(true); $('#retry-capture').hidden = false;
     status(`${error.message} Use “Check payment again” for this order.`, 'error'); throw error;
   }
 }
+function deadline(promise, message) {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), 20000); })]).finally(() => clearTimeout(timer));
+}
+function loadPayPalCore() {
+  if (window.paypal?.createInstance) return Promise.resolve();
+  if (corePromise) return corePromise;
+  const script = document.createElement('script'); script.src = 'https://www.sandbox.paypal.com/web-sdk/v6/core'; script.async = true;
+  corePromise = deadline(new Promise((resolve, reject) => {
+    script.onload = resolve; script.onerror = () => reject(new Error('PayPal could not connect. Please retry.'));
+    document.head.append(script);
+  }), 'PayPal is taking longer than expected. Please retry.').catch(error => { script.remove(); corePromise = null; throw error; });
+  return corePromise;
+}
 function setupPayPal() {
-  return sdkPromise ||= (async () => {
-    status('Connecting to PayPal sandbox…');
-    const script = document.createElement('script'); script.src = 'https://www.sandbox.paypal.com/web-sdk/v6/core';
-    await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = () => reject(new Error('PayPal could not load. Refresh and try again.')); document.head.append(script); });
+  if (sdkPromise) return sdkPromise;
+  const attempt = ++sdkGeneration;
+  sdkPromise = deadline((async () => {
+    await loadPayPalCore();
     const sdk = await window.paypal.createInstance({ clientId: config.clientId, components: ['paypal-payments'], pageType: 'checkout' });
     const eligibility = await sdk.findEligibleMethods({ currencyCode: 'USD' });
     if (!eligibility.isEligible('paypal')) throw new Error('PayPal checkout is unavailable in this browser.');
@@ -120,10 +148,11 @@ function setupPayPal() {
       onCancel: () => { if (!pendingOrder) { publishPayment('cancelled'); lock(false); status('Payment cancelled. You can try again.'); } },
       onError: () => { if (!pendingOrder) { publishPayment('failed'); lock(false); status('PayPal could not complete checkout. Please try again.', 'error'); } },
     });
+    if (attempt !== sdkGeneration) throw new Error('PayPal setup was superseded.');
     const button = document.createElement('paypal-button'); $('#paypal-button-container').replaceChildren(button);
     button.addEventListener('click', async () => {
       if (busy || paid || !selectedQuote) return;
-      lock(true); status('Opening PayPal sandbox…');
+      lock(true); status('Opening PayPal…');
       try {
         const orderPromise = request('/api/paypal/orders', { quoteId: selectedQuote.quoteId }).then(data => {
           activeOrderId = data.id; publishPayment('active'); return { orderId: data.id };
@@ -131,8 +160,10 @@ function setupPayPal() {
         await session.start({ presentationMode: 'auto' }, orderPromise);
       } catch (error) { if (!pendingOrder) { publishPayment('failed'); lock(false); status(error.message || 'Could not start checkout.', 'error'); } }
     });
-  })().catch(error => { sdkPromise = null; throw error; });
+  })(), 'PayPal is taking longer than expected. Please retry.').catch(error => { if (attempt === sdkGeneration) { sdkGeneration++; sdkPromise = null; } throw error; });
+  return sdkPromise;
 }
+$('#retry-paypal').addEventListener('click', requote);
 $('#quantity').addEventListener('change', requote); $('#offer').addEventListener('change', requote);
 $('#retry-capture').addEventListener('click', async () => { $('#retry-capture').disabled = true; try { await capture(pendingOrder); } catch {} finally { $('#retry-capture').disabled = false; } });
 function closeCheckout() { if (!busy) $('#product-dialog').close(); }
@@ -146,6 +177,6 @@ $('#department-tabs').addEventListener('click', event => {
 });
 $('#search-form').addEventListener('submit', event => { event.preventDefault(); loadCatalog(); });
 $('#retry-catalog').addEventListener('click', loadCatalog);
-request('/api/config').then(data => { config = data; return loadCatalog(); }).catch(error => { $('#catalog-status').textContent = error.message; });
+request('/api/config').then(data => { config = data; if (config.configured) loadPayPalCore().catch(() => {}); return loadCatalog(); }).catch(error => { $('#catalog-status').textContent = error.message; });
 
 $('#close-payment-success').addEventListener('click', () => { $('#payment-success').close(); $('#product-dialog').close(); });

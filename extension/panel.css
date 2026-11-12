@@ -89,3 +89,14 @@ main,.floating-panel main{padding:12px}
 .receipt-amounts dd{margin:0;font-size:20px;font-weight:650;color:#4ade80;font-variant-numeric:tabular-nums}
 .receipt-amounts .receipt-current{border-top:0;padding-top:0}
 .receipt-amounts .receipt-current dd{font-size:30px;line-height:1.2}
+
+/* Window actions live together in the host title bar. */
+.floating-panel #collapse-advisor,.floating-panel #expand-advisor{display:none!important}
+.floating-panel header .mark,.floating-panel header>div{display:none}
+.floating-panel header:has(#savings[hidden]){display:none}
+.floating-panel header{padding:10px 12px}
+.floating-panel header #savings{flex:1;max-width:none;padding:0;border:0;background:transparent}
+.floating-panel header .savings-total{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px}
+.floating-panel header .savings-amount{display:inline;margin:0;font-size:20px}
+.floating-panel .compact-heading>span{font-size:0;letter-spacing:0}
+.floating-panel .compact-heading .test-badge{font-size:9px}

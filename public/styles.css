@@ -10,3 +10,12 @@
 .success-tick svg{width:22px;height:22px}
 .close svg,.success-tick svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #search-form button{display:grid;place-items:center;min-width:32px;padding:0;line-height:1}
+
+#payment-loading{display:flex;align-items:center;justify-content:center;gap:10px;min-height:48px;border:1px solid #dce2d4;border-radius:6px;background:#f3f4ed;color:#52634d;font-size:12px}
+.payment-spinner{width:16px;height:16px;border:2px solid #ccd5c4;border-top-color:#365b41;border-radius:50%;animation:payment-spin .8s linear infinite}
+@keyframes payment-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.payment-spinner{animation:none}}
+#retry-paypal{margin:6px 0}
+
+#close-checkout{position:absolute;display:block;padding:0;line-height:0;font-size:0;width:32px;height:32px;box-sizing:border-box}
+#close-checkout svg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;width:16px;height:16px;margin:0;pointer-events:none}

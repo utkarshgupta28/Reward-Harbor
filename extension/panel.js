@@ -13,6 +13,10 @@ function setCompact(value) {
 setCompact(compactMode);
 $('#expand-advisor').addEventListener('click', () => setCompact(false));
 $('#collapse-advisor').addEventListener('click', () => setCompact(true));
+window.addEventListener('message', event => {
+  if (!embedded || event.source !== window.parent || event.data?.type !== 'REWARD_HARBOR_VIEW' || typeof event.data.compact !== 'boolean') return;
+  setCompact(event.data.compact);
+});
 function compactMessage(title, detail) {
   $('#compact-card').textContent = title;
   $('#compact-estimate').textContent = detail;

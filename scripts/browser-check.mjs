@@ -34,6 +34,11 @@ try {
   await page.screenshot({ path: 'artifacts/storefront.png', fullPage: true });
   await page.locator('[data-buy]').first().click();
   await page.locator('#setup:not([hidden])').waitFor();
+  const productClose = await page.locator('#close-checkout').boundingBox();
+  const productCloseIcon = await page.locator('#close-checkout svg').boundingBox();
+  assert.ok(Math.abs(productClose.x + productClose.width / 2 - productCloseIcon.x - productCloseIcon.width / 2) < 1);
+  assert.ok(Math.abs(productClose.y + productClose.height / 2 - productCloseIcon.y - productCloseIcon.height / 2) < 1);
+
   assert.match(await page.locator('#total').innerText(), /48\.00/);
   await page.fill('#quantity', '2'); await page.locator('#quantity').blur();
   await page.waitForFunction(() => document.querySelector('#total').textContent.includes('96.00'));
@@ -81,7 +86,11 @@ try {
   } });
   paymentServer.listen(0, '127.0.0.1'); await once(paymentServer, 'listening');
   const paymentBase = `http://127.0.0.1:${paymentServer.address().port}`;
-  await page.route('https://www.sandbox.paypal.com/web-sdk/v6/core', route => route.fulfill({ contentType: 'text/javascript', body: `
+  let sdkBehavior = 'ready', releaseSDK;
+  await page.route('https://www.sandbox.paypal.com/web-sdk/v6/core', async route => {
+    if (sdkBehavior === 'fail') return route.abort();
+    if (sdkBehavior === 'hold') await new Promise(resolve => { releaseSDK = resolve; });
+    return route.fulfill({ contentType: 'text/javascript', body: `
     window.paypal = { async createInstance() { return {
       async findEligibleMethods() { return { isEligible: () => true }; },
       async createPayPalOneTimePaymentSession(callbacks) { return {
@@ -91,7 +100,7 @@ try {
         }
       }; }
     }; } };
-  ` }));
+  ` }); });
   await page.goto(paymentBase);
   await page.locator('[data-buy]').first().click();
   await page.locator('paypal-button').waitFor({ state: 'attached' });
@@ -104,7 +113,7 @@ try {
   assert.equal(await page.locator('#quantity').isEnabled(), true);
   await page.evaluate(() => document.querySelector('paypal-button').click());
   await page.locator('#status[data-state="success"]').waitFor();
-  assert.equal(await page.locator('#status').innerText(), 'Sandbox payment completed · USD 48.00');
+  assert.equal(await page.locator('#status').innerText(), 'Payment completed · USD 48.00');
   assert.doesNotMatch(await page.locator('#payment-success-info').innerText(), /CAP123|Capture/);
   assert.equal(await page.locator('#payment-success').isVisible(), true);
   assert.match(await page.locator('#payment-success-info').innerText(), /USD 48.00/);
@@ -114,6 +123,31 @@ try {
   assert.deepEqual(events.map(e => e.state), ['active', 'cancelled', 'active', 'completed']);
   assert.equal(events[0].purchase.category, 'grocery');
   assert.equal(events[0].orderId, 'ORDER123');
+
+  // SDK starts before product selection; slow or failed loading stays recoverable.
+  sdkBehavior = 'hold';
+  const earlySDKRequest = page.waitForRequest('https://www.sandbox.paypal.com/web-sdk/v6/core');
+  await page.goto(paymentBase, { waitUntil: 'domcontentloaded' });
+  await earlySDKRequest;
+  await page.locator('[data-buy]').first().click();
+  await page.locator('#payment-loading').waitFor({ state: 'visible' });
+  await page.waitForFunction(() => document.querySelector('#total').textContent.includes('48.00'));
+  assert.equal(await page.locator('#paypal-button-container').isVisible(), false);
+  assert.equal(await page.locator('#quantity').isEnabled(), true, 'Slow PayPal loading does not freeze purchase controls');
+  await page.screenshot({ path: 'artifacts/paypal-loading.png', fullPage: true });
+  sdkBehavior = 'ready'; releaseSDK();
+  await page.locator('#paypal-button-container:not([hidden]) paypal-button').waitFor({ state: 'attached' });
+  assert.equal(await page.locator('#payment-loading').isVisible(), false);
+  sdkBehavior = 'fail';
+  await page.goto(paymentBase);
+  await page.locator('[data-buy]').first().click();
+  await page.locator('#retry-paypal').waitFor({ state: 'visible' });
+  assert.match(await page.locator('#status').innerText(), /could not connect|longer than expected/);
+  sdkBehavior = 'ready';
+  await page.locator('#retry-paypal').click();
+  await page.locator('#paypal-button-container:not([hidden]) paypal-button').waitFor({ state: 'attached' });
+  assert.equal(await page.locator('#retry-paypal').isVisible(), false);
+  await page.screenshot({ path: 'artifacts/refined-checkout.png', fullPage: true });
 
   // Run the actual side-panel UI with simulated Chrome APIs and the real reward API.
   // Loading an unpacked extension into a user's Chrome still needs manual verification.
@@ -185,13 +219,15 @@ try {
   const compactHeight = await compact.locator('#compact-advisor').evaluate(el => el.getBoundingClientRect().height);
   assert.ok(compactHeight <= 140, `Compact recommendation is ${compactHeight}px tall`);
   await panel.locator('#compact-fixture').screenshot({ path: 'artifacts/compact-advisor.png' });
-  await compact.getByRole('button', { name: 'Expand card comparison' }).click();
+  await panel.evaluate(() => document.querySelector('#compact-fixture').contentWindow.postMessage({ type: 'REWARD_HARBOR_VIEW', compact: false }, location.origin));
+  await compact.locator('.result.best').waitFor({ state: 'visible' });
   assert.equal(await compact.locator('.result.best').isVisible(), true);
   await panel.locator('#compact-fixture').evaluate(el => { el.style.height = '510px'; });
   const headerTop = await compact.locator('header').evaluate(el => el.getBoundingClientRect().top);
   await compact.locator('main').evaluate(el => { el.scrollTop = el.scrollHeight; });
   assert.equal(await compact.locator('header').evaluate(el => el.getBoundingClientRect().top), headerTop, 'Header stays fixed while comparison scrolls');
-  await compact.getByRole('button', { name: 'Minimize card comparison' }).click();
+  await panel.evaluate(() => document.querySelector('#compact-fixture').contentWindow.postMessage({ type: 'REWARD_HARBOR_VIEW', compact: true }, location.origin));
+  await compact.locator('#compact-advisor').waitFor({ state: 'visible' });
   assert.equal(await compact.locator('#compact-advisor').isVisible(), true);
   assert.equal(await compact.locator('main').isVisible(), false);
   await compact.locator('body').evaluate(() => {
@@ -275,20 +311,57 @@ try {
   assert.equal(await floating.locator('iframe').count(), 1, 'Login-to-checkout mounts exactly one advisor');
   await floating.evaluate(() => {
     const frame = document.querySelector('div').shadowRoot.querySelector('iframe');
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, origin: 'about:blank', data: { type: 'REWARD_HARBOR_SIZE', height: 100, mode: 'compact', compact: true } }));
+  });
+  const bottomStrip = await floating.locator('.shell').boundingBox();
+  assert.ok(bottomStrip.y > 600, 'Compact advisor stays near the bottom of the popup');
+  const moveGrip = await floating.getByRole('button', { name: 'Move advisor' }).boundingBox();
+  await floating.mouse.move(moveGrip.x + moveGrip.width / 2, moveGrip.y + moveGrip.height / 2);
+  await floating.mouse.down();
+  await floating.mouse.move(moveGrip.x + moveGrip.width / 2 - 50, moveGrip.y + moveGrip.height / 2 - 70, { steps: 5 });
+  await floating.mouse.up();
+  const movedStrip = await floating.locator('.shell').boundingBox();
+  assert.ok(movedStrip.x < bottomStrip.x - 40 && movedStrip.y < bottomStrip.y - 60, 'Dragging moves the complete advisor');
+  assert.equal(await floating.locator('iframe').isVisible(), true, 'Dragging does not close the advisor');
+
+  await floating.evaluate(() => {
+    const frame = document.querySelector('div').shadowRoot.querySelector('iframe');
     window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, origin: 'about:blank', data: { type: 'REWARD_HARBOR_SIZE', height: 400, mode: 'comparison' } }));
   });
   const shell = floating.locator('.shell');
   const beforeResize = await shell.boundingBox();
-  await floating.getByRole('button', { name: 'Resize advisor' }).press('ArrowLeft');
-  await floating.getByRole('button', { name: 'Resize advisor' }).press('ArrowUp');
+  await floating.getByRole('button', { name: 'Resize advisor from top left' }).press('ArrowLeft');
+  await floating.getByRole('button', { name: 'Resize advisor from top left' }).press('ArrowUp');
   const afterResize = await shell.boundingBox();
   assert.ok(afterResize.width > beforeResize.width && afterResize.height > beforeResize.height, 'Resize control changes both dimensions');
-  const gripBounds = await floating.getByRole('button', { name: 'Resize advisor' }).boundingBox();
+  const gripBounds = await floating.getByRole('button', { name: 'Resize advisor from top left' }).boundingBox();
   await floating.mouse.move(gripBounds.x + gripBounds.width / 2, gripBounds.y + gripBounds.height / 2);
   await floating.mouse.down();
   await floating.mouse.move(gripBounds.x - 25, gripBounds.y - 25, { steps: 4 });
   await floating.mouse.up();
   assert.ok((await shell.boundingBox()).width > afterResize.width, 'Pointer dragging resizes the advisor');
+  await floating.frameLocator('iframe').locator('body').evaluate(() => {
+    window.viewCommands = [];
+    window.addEventListener('message', event => { if (event.data?.type === 'REWARD_HARBOR_VIEW') window.viewCommands.push(event.data.compact); });
+  });
+  await floating.getByRole('button', { name: 'Minimize advisor' }).click();
+  await floating.waitForFunction(() => document.querySelector('div').shadowRoot.querySelector('iframe').contentWindow.viewCommands?.at(-1) === true);
+  await floating.evaluate(() => {
+    const frame = document.querySelector('div').shadowRoot.querySelector('iframe');
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, origin: 'about:blank', data: { type: 'REWARD_HARBOR_SIZE', height: 100, mode: 'compact', compact: true } }));
+  });
+  await floating.getByRole('button', { name: 'Expand advisor' }).click();
+  await floating.waitForFunction(() => document.querySelector('div').shadowRoot.querySelector('iframe').contentWindow.viewCommands?.at(-1) === false);
+  await floating.evaluate(() => {
+    const frame = document.querySelector('div').shadowRoot.querySelector('iframe');
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, origin: 'about:blank', data: { type: 'REWARD_HARBOR_SIZE', height: 400, mode: 'comparison' } }));
+  });
+  assert.equal(await floating.locator('.titlebar .window-control').count(), 2, 'Only minimize and close remain in the top bar');
+  assert.equal(await floating.getByRole('button', { name: 'Maximize advisor' }).count(), 0);
+  assert.equal(await floating.locator('.resize-edge').count(), 8, 'All edges and corners resize');
+  assert.equal(await floating.locator('.titlebar .move-handle').count(), 1, 'The title bar is the drag handle');
+  await shell.screenshot({ path: 'artifacts/window-controls.png' });
+
   const launcher = await floating.getByRole('button', { name: 'Close Reward Harbor' }).boundingBox();
   const launcherIcon = await floating.getByRole('button', { name: 'Close Reward Harbor' }).locator('svg').boundingBox();
   assert.ok(Math.abs(launcher.x + launcher.width / 2 - launcherIcon.x - launcherIcon.width / 2) < 1);
@@ -304,8 +377,22 @@ try {
   assert.ok(Math.abs(openBounds.x + openBounds.width / 2 - arrowBounds.x - arrowBounds.width / 2) < 1);
   assert.ok(Math.abs(openBounds.y + openBounds.height / 2 - arrowBounds.y - arrowBounds.height / 2) < 1);
   await openLauncher.screenshot({ path: 'artifacts/launcher-open.png' });
+  await floating.mouse.move(openBounds.x + openBounds.width / 2, openBounds.y + openBounds.height / 2);
+  await floating.mouse.down();
+  await floating.mouse.move(openBounds.x + openBounds.width / 2 - 30, openBounds.y + openBounds.height / 2 - 30, { steps: 5 });
+  await floating.mouse.up();
+  assert.equal(await floating.locator('iframe').isVisible(), false, 'Dragging the closed launcher does not toggle it');
+  assert.ok((await openLauncher.boundingBox()).x < openBounds.x - 20, 'Closed launcher is movable');
+
   await floating.getByRole('button', { name: 'Open Reward Harbor' }).click();
   assert.equal(await floating.locator('iframe').isVisible(), true);
+  await floating.setViewportSize({ width: 360, height: 600 });
+  await floating.waitForFunction(() => {
+    const shell = document.querySelector('div').shadowRoot.querySelector('.shell').getBoundingClientRect();
+    return shell.x >= 0 && shell.y >= 0 && shell.right <= innerWidth && shell.bottom <= innerHeight;
+  });
+  const constrained = await floating.locator('.shell').boundingBox();
+  assert.ok(constrained.x >= 0 && constrained.y >= 0 && constrained.x + constrained.width <= 360 && constrained.y + constrained.height <= 600, 'Advisor stays within a resized popup');
   await floating.close();
   assert.equal(errors.length, 0, errors.join('\n'));
   console.log('Browser checks passed: checkout UI, visible card extraction/collisions, mocked SDK cancellation/approval, and side-panel mapping/comparison against the real local reward API (Chrome APIs mocked).');

@@ -20,11 +20,11 @@ try {
   await mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/live-storefront.png', fullPage: true });
   await page.locator('[data-buy]').first().click();
-  await page.waitForFunction(() => document.querySelector('#status').textContent.startsWith('Ready.') || document.querySelector('#status').dataset.state === 'error', { timeout: 45000 });
+  await page.waitForFunction(() => !document.querySelector('#paypal-button-container').hidden && Boolean(document.querySelector('paypal-button')) || document.querySelector('#status').dataset.state === 'error', { timeout: 45000 });
   const status = await page.locator('#status').innerText();
   const checkout = JSON.parse(await page.locator('html').getAttribute('data-reward-checkout'));
   assert.ok(Number(checkout.amount) > 0); assert.equal(checkout.categoryBasis, 'sandbox-department-simulation');
-  assert.ok(status.startsWith('Ready.'), status);
+  assert.equal(await page.locator('#paypal-button-container').isVisible(), true, status);
   await page.screenshot({ path: 'artifacts/live-checkout.png', fullPage: true });
   await page.locator('#close-checkout').click(); await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
